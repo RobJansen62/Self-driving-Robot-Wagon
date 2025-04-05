@@ -1,0 +1,120 @@
+; ------------------------------------------------------------------------------
+; Title: Robot Wagon sensor functions.
+; Author: Rob Jansen, Copyright (c) 2025..2025, all rights reserved.
+; Compiler: 2.5r9
+;
+; Revision:
+; 2025-02-16 : Rev 1.0. Initial version.
+;
+;
+; Description:  Funtions and procedure to control three the HC-SR04
+;               ultrasonic distance sensores. One sensor points to 
+;               the left, one to the center and one to the right.
+;               Only one sensor can be active at the same time.
+; 
+; Notes:       
+;           
+
+; Settings for the HCSR04 Ultrasonic Ranging Motule. The library uses timer 1
+; which is assumed to run at 1 MHz. We use Fosc/4 and a prescaler of 1:4.
+T1CON_TMR1CS = 0b00 -- Clock source Fosc/4, gives 4 MHz.
+T1CON_T1CKPS = 0b10 -- Prescaler 1:4, gives 1 MHz.
+; Interrupt using default INT pin a2.
+alias hcsr04_echo_pin_direction is pin_a2_direction 
+; Control pin for the module to start an echo.
+alias hcsr04_trigger_pin is pin_c5
+alias hcsr04_trigger_pin_direction is pin_c5_direction
+; Now we can include the library.
+include hcsr04
+
+; We have some pins to select which HC-SRO4 module we want to activate.
+; Define the pins. Sensor is selected using a 74HC4052. Truth table:
+; -) sensor_enable_lsb = LOW & sensor_enable_msb = LOW   --> No sensor selected
+; -) sensor_enable_lsb = HIGH & sensor_enable_msb = LOW  --> Left sensor selected
+; -) sensor_enable_lsb = LOW & sensor_enable_msb = HIGH  --> Center sensor selected
+; -) sensor_enable_lsb = HIGH & sensor_enable_msb = HIGH --> Right sensor selected
+
+; Only one may be active at the same time.
+alias sensor_enable_lsb is pin_A4
+pin_A4_direction = OUTPUT
+alias sensor_enable_msb is pin_A5
+pin_A5_direction = OUTPUT
+
+
+; ------------------------------ Constants ------------------------------------
+; Sensor constants.
+const bit SENSOR_ENABLE  = HIGH
+const bit SENSOR_DISABLE = LOW
+
+
+; Distances to indicate that no object was found, distance is in mm.
+const word DISTANCE_NONE = 5_000 ; 5 Meter.
+
+; --------------------------- Procedures & Functions --------------------------
+
+; Disable all ultrasonic sensors.
+procedure all_sensor_disable() is
+
+   sensor_enable_lsb = SENSOR_DISABLE
+   sensor_enable_msb = SENSOR_DISABLE
+ 
+end procedure
+
+
+; Enable the left ultrasonic sensor. All other sensors are disabled.
+procedure left_sensor_enable() is
+
+   sensor_enable_msb = SENSOR_DISABLE
+   sensor_enable_lsb = SENSOR_ENABLE
+ 
+end procedure
+
+
+; Enable the center ultrasonic sensor. All other sensors are disabled.
+procedure center_sensor_enable() is
+
+   sensor_enable_lsb = SENSOR_DISABLE
+   sensor_enable_msb = SENSOR_ENABLE
+
+end procedure
+
+; Enable the right ultrasonic sensor. All other sensors are disabled.
+procedure right_sensor_enable() is
+
+   sensor_enable_lsb = SENSOR_ENABLE
+   sensor_enable_msb = SENSOR_ENABLE
+
+end procedure
+
+; Initialize the sensors module.
+procedure init_sensors() is
+
+   all_sensor_disable()
+   ; HC-SR04 library
+   hcsr04_init() 
+
+end procedure
+
+
+; Return the distance of the measurement of the current sensor.
+function get_distance() return word is
+
+   var word distance 
+
+   hcsr04_start_measurement()
+   while !hcsr04_measurement_done() & !hcsr04_measurement_error() loop
+      ; Wait for measurement or error (meaning no measurement).
+   end loop
+   ; We either have a measurement or an error. An error means that an 
+   ; object was too far away.
+   if hcsr04_measurement_done() then
+      ; Valid measurement, check distance
+      distance = hcsr04_get_distance_mm() 
+   else 
+      ; No measurement, nothing in sight. 
+      distance = DISTANCE_NONE
+   end if 
+   
+   return distance
+
+end function

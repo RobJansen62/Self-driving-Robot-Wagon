@@ -1,0 +1,304 @@
+; ------------------------------------------------------------------------------
+; Title: Robot Wagon motor functions.
+; Author: Rob Jansen, Copyright (c) 2025..2025, all rights reserved.
+; Compiler: 2.5r9
+;
+; Revision:
+; 2025-02-16 : Rev 1.0. Initial version.
+;
+;
+; Description: Funtions and procedure to control two DC motors using
+;              Motors can be controlled to move the Robot Wagon forward 
+;              or backward. The speed of the motor can be controlled. 
+;              Pulse Width Modulation is used to control the speed.
+; 
+; Notes:       
+;           
+
+; Sliases used for motor control. We need to activate and de-activate 
+; two pins to activate the motors. Pins are active HIGH.
+alias motor_left_forward  is pin_C0
+pin_C0_direction = OUTPUT
+alias motor_left_reverse  is pin_C1
+pin_C1_direction = OUTPUT
+alias motor_right_forward is pin_C2
+pin_C2_direction = OUTPUT
+alias motor_right_reverse is pin_C3
+pin_C3_direction = OUTPUT
+
+; ------------------------------ Constants ------------------------------------
+; Motor constants.
+const byte NO_SPEED  = 0    
+const byte MIN_SPEED = 20
+const byte MAX_SPEED = 100
+
+; For PWM we have step incremets of 5 which means that our PWM interrupt
+const byte SPEED_STOP = 0
+const byte SPEED_SLOW = 100
+const byte SPEED_HALF = 125
+const byte SPEED_MAX  = 250
+const byte SPEED_STEP = 5
+; Routine needs to run 250 / 5 = 50 times faster and because we use a PWM
+; period of 10 ms (100 Hz) the PWM period must be 10 ms / 50 = 200 us or 5 kHz.
+const byte PWM_PERIOD_TIME = SPEED_MAX / SPEED_STEP
+
+; ------------------------------ Variables ------------------------------------
+var byte pwm_period, left_timer, right_timer
+var byte left_speed, right_speed
+var bit left_moving_forward, right_moving_forward
+
+; --------------------------- Procedures & Functions --------------------------
+
+; Stop the left motor.
+procedure left_motor_stop() is
+
+   motor_left_forward = FALSE
+   motor_left_reverse = FALSE
+
+end procedure
+
+
+; Stop the right motor.
+procedure right_motor_stop() is
+
+   motor_right_forward = FALSE
+   motor_right_reverse = FALSE
+
+end procedure
+
+
+; Activate the left moter to move forward.
+procedure left_motor_forward() is
+
+   ; Switch off reverse.
+   motor_left_reverse = LOW
+   ; Switch on forward.
+   motor_left_forward = HIGH
+
+end procedure
+
+
+; Activate the left moter to move reverse.
+procedure left_motor_reverse() is
+
+   ; Switch off forward.
+   motor_left_forward = LOW
+   ; Switch on reverse.
+   motor_left_reverse = HIGH
+
+end procedure
+
+
+; Activate the right moter to move forward.
+procedure right_motor_forward() is
+
+   ; Switch off reverse.
+   motor_right_reverse = LOW
+   ; Switch on forward.
+   motor_right_forward = HIGH
+
+end procedure
+
+
+; Activate the right moter to move reverse.
+procedure right_motor_reverse() is
+
+   ; Switch off forward.
+   motor_right_forward = LOW
+   ; Switch on reverse.
+   motor_right_reverse = HIGH
+
+end procedure
+
+
+; Set the left motor to move forward.
+procedure set_left_motor_forward() is
+
+   left_moving_forward = TRUE
+
+end procedure
+
+
+; Set the left motor to move reverse.
+procedure set_left_motor_reverse() is
+
+   left_moving_forward = FALSE
+
+end procedure
+
+
+; Set the left motor speed to the given value.
+procedure set_left_speed(byte in speed) is
+  
+  left_speed = speed
+
+end procedure
+
+
+; Increase the speed of the left motor.
+; Stops when speed is at maximum.
+procedure increase_left_speed() is
+
+   if (left_speed < SPEED_MAX) then
+      left_speed = left_speed + SPEED_STEP
+   end if 
+
+end procedure
+
+
+; Decrease the speed of the left motor.
+; Stops when speed is at SLOW.
+procedure decrease_left_speed() is
+
+   if (left_speed > SPEED_SLOW) then
+      left_speed = left_speed - SPEED_STEP
+   end if 
+
+end procedure
+
+
+; Return the speed of the left motor.
+function get_left_speed() return byte is
+ 
+    return left_speed
+
+end function 
+   
+
+
+; Set the right motor to move forward.
+procedure set_right_motor_forward() is
+
+   right_moving_forward = TRUE
+
+end procedure
+
+
+; Set the right motor to move reverse.
+procedure set_right_motor_reverse() is
+
+   right_moving_forward = FALSE
+
+end procedure
+
+
+
+; Set the right motor speed to the given value.
+procedure set_right_speed(byte in speed) is
+  
+  right_speed = speed
+
+end procedure
+
+
+; Increase the speed of the righy motor.
+; Stops when speed is at maximum.
+procedure increase_right_speed() is
+
+   if (right_speed < SPEED_MAX) then
+      right_speed = right_speed + SPEED_STEP
+   end if 
+
+end procedure
+
+
+; Decrease the speed of the right motor.
+; Stops when speed is at SLOW.
+procedure decrease_right_speed() is
+
+   if (right_speed > SPEED_SLOW) then
+      right_speed = right_speed - SPEED_STEP
+   end if 
+
+end procedure
+
+
+; Return the speed of the right motor.
+function get_right_speed() return byte is
+ 
+    return right_speed
+
+end function 
+   
+
+; Initialze the motor module. Motors are off. Timer 2 is initialized
+; for to control the motor speed using PWM.
+procedure init_motors() is
+
+   left_motor_stop()
+   right_motor_stop()
+   left_speed = 0
+   right_speed = 0
+   left_moving_forward = TRUE
+   right_moving_forward = TRUE
+   ; Register PR2 holds the Timer Period using the following formula:
+   ; Period = (PR2 + 1) * 4 * Tosc * Prescale * Postscale
+   ; where Tosc = 1/Fosc and Fosc = 16.000.000 Hz.
+   ; With a PR2 reload value of 199 and postcale1 4 and prescaler of 1
+   ; Period = (199 + 1) * 4 * 1/16.000.000 * 4 * 1 =  200 us or 5000 HZ
+   T2CON_T2OUTPS = 0b0011 ; Postscaler is 1:4
+   T2CON_T2CKPS  = 0b00   ; Prescaler divide by 1
+   PR2           = 199    ; Reload value.
+   pwm_period    = 0      ; Starts a new period
+   PIE1_TMR2IE   = TRUE   ; Enable Timer 2 interrupt
+   PIR1_TMR2IF   = FALSE  ; Clear Timer 2 interrupt flag.
+   INTCON_PEIE   = TRUE   ; Enable peripheral interrupt.
+   INTCON_GIE    = TRUE   ; Enabel global interrupt.
+   T2CON_TMR2ON  = TRUE   ; Start the PWM cycle. 
+
+end procedure
+
+
+; This interrupt procedure controls the PWM cycle using Timer 2. It controls
+; the speed of the motors. Motors are switched on at the start of a new
+; PWM period and are switched off when the duty cycle has passed.
+; The routine is called every 196 us and takes at most 60 us.
+procedure pwm_cycle is pragma interrupt
+
+   if PIR1_TMR2IF & PIE1_TMR2IE then
+      PIR1_TMR2IF = FALSE
+
+      ; First check the if we need to start a new period.
+      if (pwm_period == 0) then
+         ; New period. Switch LEDs on and start a new duty cycle.
+         pwm_period = PWM_PERIOD_TIME
+         left_timer = left_speed
+         right_timer = right_speed
+         ; Only start the motor when a speed is given.
+         if (left_speed > SPEED_STEP) then
+            ; Move forward or reverse.
+            if left_moving_forward then 
+               left_motor_forward()
+            else
+               left_motor_reverse()
+            end if 
+         end if 
+         if (right_speed > SPEED_STEP) then
+            ; Move forward or reverse.
+            if right_moving_forward then 
+               right_motor_forward()
+            else
+               right_motor_reverse()
+            end if 
+         end if 
+       else
+          pwm_period = pwm_period - 1
+       end if
+      
+       ; Stop the PWM cycle when the time has passed.
+       if left_timer >= SPEED_STEP then
+          left_timer = left_timer - SPEED_STEP
+       else 
+          left_motor_stop()
+       end if 
+
+       if right_timer >= SPEED_STEP then
+          right_timer = right_timer - SPEED_STEP
+       else 
+          right_motor_stop()
+       end if 
+
+   end if 
+
+end procedure 
+

@@ -1,0 +1,247 @@
+; -----------------------------------------------------------------------------
+; Title: Robot Wagon
+; Author: Rob Jansen, Copyright (c) 2025..2025, all rights reserved.
+; Compiler: 2.5r9
+;
+; Revision:
+; 2025-02-15 : Rev 1.0. Initial version.
+;
+;
+; Description: Control program for an autonomous moving Robot Wagon using
+;              three HC-SR04 Ultrasonic Sensors and 2 motors.
+; 
+; Notes:       
+;           
+include 16f1823                 
+
+; This program uses the internal oscillator at 16 MHz.
+pragma target clock    16_000_000      ; oscillator frequency
+pragma target OSC      INTOSC_NOCLKOUT ; Internal Clock
+pragma target PLLEN    DISABLED        ; No PLL
+pragma target WDT      DISABLED        ; No Watchdog
+pragma target PWRTE    ENABLED         ; Power up timer enabled
+pragma target BROWNOUT DISABLED        ; No brownout reset
+pragma target FCMEN    DISABLED        ; No clock monitoring
+pragma target IESO     DISABLED        ; int/ext osc. switch
+pragma target LVP      ENABLED         ; Low voltage programming
+pragma target MCLR     EXTERNAL        ; Reset external
+; Set the internal clock frequency to 16 MHz.
+OSCCON_SPLLEN = FALSE                  ; Disable PLL
+OSCCON_IRCF   = 0b1111                 ; Set 16 MHz 
+OSCCON_SCS    = 0b10                   ; Internal oscillator block
+
+enable_digital_io()
+; Wait some time for the hardware to power up.
+_usec_delay(250_000)
+
+; LED control aliases
+alias led is pin_C4
+pin_C4_direction =  OUTPUT
+
+; Include the other modules.
+include motors
+include sensors
+
+; ---------------------------------- Constants --------------------------------
+; Distance measurement constants. 
+const word DISTANCE_MIN    = 200 ; 20 cm
+const word DISTANCE_MEDIUM = 350 ; 35 cm 
+
+; LED constants.
+const bit LED_ON  = HIGH
+const bit LED_OFF = LOW
+
+;  Used when nothing is detected for some time. 
+const word MAX_NO_MEASUREMENT = 300
+
+; ----------------------------- Variables ------------------------------------
+; Measurements
+var word distance_left, distance_center, distance_right
+var word no_measurement_counter
+
+; ----------------------- Procedures & Fuunctions ---------------------------
+
+; Make a lift move.
+procedure move_left() is
+
+   led = LED_ON
+   set_left_speed(SPEED_STOP)
+   set_right_speed(SPEED_MAX)
+   no_measurement_counter = 0      
+
+end procedure
+
+
+; Make a right move.
+procedure move_right() is
+
+   led = LED_ON
+   set_right_speed(SPEED_STOP)
+   set_left_speed(SPEED_MAX)
+   no_measurement_counter = 0      
+
+end procedure
+
+
+; Turn a bit left.
+procedure nudge_left() is
+
+   led = LED_ON
+   decrease_left_speed()
+   increase_right_speed()
+   no_measurement_counter = 0      
+
+end procedure
+
+
+; Turn a bit right.
+procedure nudge_right() is
+
+   led = LED_ON
+   decrease_right_speed()
+   increase_left_speed()
+   no_measurement_counter = 0      
+
+end procedure
+
+
+; Go back a bit.
+procedure go_back() is
+
+   led = LED_ON
+   set_left_motor_reverse()
+   set_right_motor_reverse()
+   set_left_speed(SPEED_HALF)
+   set_right_speed(SPEED_HALF)
+   _usec_delay(500_000) ; Go backward for some time. 
+   set_left_speed(SPEED_STOP)
+   set_right_speed(SPEED_STOP)
+   set_left_motor_forward()
+   set_right_motor_forward()
+   no_measurement_counter = 0      
+
+end procedure
+
+
+; Get the measuremantes of all sensors. 
+procedure get_measurements() is
+ 
+   left_sensor_enable()
+   _usec_delay(1_000)
+   distance_left = get_distance()
+   center_sensor_enable()
+   _usec_delay(1_000)
+   distance_center = get_distance()
+   right_sensor_enable()
+   _usec_delay(1_000)
+   distance_right = get_distance()
+   all_sensor_disable()
+
+end procedure
+
+
+;-------------------------- Start of main program -----------------------------
+
+; Initialize all modules and leds.
+init_sensors()
+init_motors()
+led = LED_OFF
+no_measurement_counter = 0
+
+forever loop
+
+      ; First scan all sensors.
+   get_measurements()
+
+   ; First check if we cannot move in any direction. We have 3 sensors so
+   ; we have 8 possibilities but since we use 2 distances we have 16.
+   ; Start with actions around minium distance since this needs direct
+   ; action.
+   if (distance_left <= DISTANCE_MIN) & (distance_center <= DISTANCE_MIN) &
+      (distance_right <= DISTANCE_MIN) then
+      ; 1: Too close to everything, move a bit backwards using the same speed.
+      go_back()
+      ; Make a right turn a bit right as to get out (default).
+      move_right()
+   elsif (distance_left <= DISTANCE_MIN) & (distance_center > DISTANCE_MIN) &
+      (distance_right > DISTANCE_MIN) then
+      ; 2: Left too close, turn a bit right.
+      move_right()
+   elsif (distance_left > DISTANCE_MIN) & (distance_center > DISTANCE_MIN) &
+      (distance_right <= DISTANCE_MIN) then
+      ; 3: Right too close, turn a bit left.
+      move_left()
+   elsif (distance_left > DISTANCE_MIN) & (distance_center <= DISTANCE_MIN) &
+      (distance_right > DISTANCE_MIN) then
+      ; 4: Something in front of us, turn a bit right. Default for getting out.
+      go_back()
+      ; Make a right turn a bit right as to get out (default).
+      move_right()
+   elsif (distance_left <= DISTANCE_MIN) & (distance_center <= DISTANCE_MIN) &
+      (distance_right > DISTANCE_MIN) then
+      ; 5: Something left and in front of us, turn a bit right.
+      go_back()
+      move_right()
+   elsif (distance_left > DISTANCE_MIN) & (distance_center <= DISTANCE_MIN) &
+      (distance_right <= DISTANCE_MIN) then
+      ; 6: Something right and in front of us, turn a bit left.
+      move_left()
+   elsif 
+      ; 7: Nothing in sight and 8: The situation where left and right 
+      ; are too close but center is OK will never happen since it has 
+      ; then already moved away.
+
+      ; Now we will check for medium distance and if the happens we will slow down.
+      (distance_left <= DISTANCE_MEDIUM) & (distance_center <= DISTANCE_MEDIUM) &
+      (distance_right <= DISTANCE_MEDIUM) then
+      ; 1: Too close to everything, slow down both motors.
+      decrease_left_speed()
+      decrease_right_speed()
+      LED = LED_ON
+   elsif (distance_left <= DISTANCE_MEDIUM) & (distance_center > DISTANCE_MEDIUM) &
+      (distance_right > DISTANCE_MEDIUM) then
+      ; 2: Left too close, turn a bit right.
+      nudge_right()
+   elsif (distance_left > DISTANCE_MEDIUM) & (distance_center > DISTANCE_MEDIUM) &
+      (distance_right <= DISTANCE_MEDIUM) then
+      ; 3: Right too close, turn a bit left.
+      nudge_left()
+   elsif (distance_left > DISTANCE_MEDIUM) & (distance_center <= DISTANCE_MEDIUM) &
+      (distance_right > DISTANCE_MEDIUM) then
+      ; 4: Something in front of us, slow down both motors.
+      decrease_left_speed()
+      decrease_right_speed()
+      LED = LED_ON
+   elsif (distance_left <= DISTANCE_MEDIUM) & (distance_center <= DISTANCE_MEDIUM) &
+      (distance_right > DISTANCE_MEDIUM) then
+      ; 5: Something left and in front of us, turn a bit right.
+      nudge_right()
+   elsif (distance_left > DISTANCE_MEDIUM) & (distance_center <= DISTANCE_MEDIUM) &
+      (distance_right <= DISTANCE_MEDIUM) then
+      ; 6: Something right and in front of us, turn a bit left.
+      nudge_left()
+   else 
+      ; 7: Nothing in sight and 8: The situation where left and right 
+      ; are too close but center is OK will never happen since it has 
+      ; then already moved away. Move straigt ahead using the biggest speed
+      if (get_left_speed() > get_left_speed()) then
+         set_right_speed(get_left_speed()) 
+      else
+         set_left_speed(get_right_speed()) 
+      end if 
+      ; And go faster.
+      increase_left_speed()
+      increase_right_speed
+      led = LED_OFF
+   end if 
+
+   ; If we do not get any measurement for some time we may be too close
+   ; so go back. 
+   no_measurement_counter = no_measurement_counter + 1
+   if (no_measurement_counter == MAX_NO_MEASUREMENT) then
+      go_back()
+      move_right()
+      no_measurement_counter = 0
+   end if 
+
+end loop
