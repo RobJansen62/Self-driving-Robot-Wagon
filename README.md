@@ -3,5 +3,5 @@ A self driving Robot Wagon using three HC-SR04 Ultrasonic Distance Sensors contr
 
 The software is created using the [JAL programming language](http://justanotherlanguage.org/).
 
-For a demo, hav a look at this [video](https://youtu.be/kwYxd5GjtCw).
+For a demo, have a look at this [video](https://youtu.be/kwYxd5GjtCw).
 
